@@ -13,17 +13,17 @@ from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 import warnings
 warnings.filterwarnings("ignore")
 
-# App title and icon
+# App config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡")
 st.title("⚡ Dynamic Power Demand Forecasting")
 
-# Sidebar inputs
+# Sidebar
 st.sidebar.header("Model Configuration")
 model_options = ["Prophet", "ARIMA", "LSTM", "Random Forest", "XGBoost"]
 selected_model = st.sidebar.selectbox("Choose Forecasting Model", model_options)
 train_split = st.sidebar.slider("Training Data Percentage", min_value=50, max_value=95, value=80)
 
-# Upload training and testing data
+# Upload data
 st.sidebar.header("Upload Data")
 train_file = st.sidebar.file_uploader("Upload Training Data CSV", type=["csv"])
 test_file = st.sidebar.file_uploader("Upload Testing Data CSV", type=["csv"])
@@ -35,7 +35,6 @@ def calculate_metrics(true, pred):
     accuracy = 100 - (mae / np.mean(true) * 100)
     return mae, rmse, accuracy
 
-# Suggestion based on accuracy
 def generate_suggestion(accuracy):
     if accuracy > 90:
         return "✅ Model is highly accurate."
@@ -45,28 +44,23 @@ def generate_suggestion(accuracy):
         return "❌ Model is not accurate. Try different models or feature engineering."
 
 # Main logic
-if train_file is not None and test_file is not None:
+if train_file and test_file:
     train_df = pd.read_csv(train_file)
     test_df = pd.read_csv(test_file)
 
-    # Ensure datetime format
     train_df['timestamp'] = pd.to_datetime(train_df['timestamp'])
     test_df['timestamp'] = pd.to_datetime(test_df['timestamp'])
 
-    # Select state
     states = train_df['state'].unique().tolist()
     selected_state = st.selectbox("Select State for Forecasting", states)
 
-    # Filter by state
     train_df = train_df[train_df['state'] == selected_state].sort_values('timestamp')
     test_df = test_df[test_df['state'] == selected_state].sort_values('timestamp')
 
-    # Split training data
     split_index = int(len(train_df) * train_split / 100)
     train_data = train_df.iloc[:split_index]
     val_data = train_df.iloc[split_index:]
 
-    # Forecasting
     forecast = []
     if selected_model == "Prophet":
         df_prophet = train_data[['timestamp', 'power_demand']].rename(columns={'timestamp': 'ds', 'power_demand': 'y'})
@@ -124,9 +118,12 @@ if train_file is not None and test_file is not None:
 
     # Plot
     st.subheader("Forecast vs Actual")
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(test_df['timestamp'], test_df['power_demand'].values, label="Actual")
     ax.plot(test_df['timestamp'], forecast, label="Forecast")
+    ax.set_title(f"Forecast vs Actual for {selected_state}")
+    ax.set_xlabel("Timestamp")
+    ax.set_ylabel("Power Demand")
     ax.legend()
     st.pyplot(fig)
 
