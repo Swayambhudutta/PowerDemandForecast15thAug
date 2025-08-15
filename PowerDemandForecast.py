@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from statsmodels.tsa.arima.model import ARIMA
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.metrics import MeanAbsoluteError
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -25,8 +26,10 @@ train_file = st.sidebar.file_uploader("Upload Training Data CSV", type=["csv"])
 test_file = st.sidebar.file_uploader("Upload Testing Data CSV", type=["csv"])
 
 def calculate_metrics(true, pred):
-    mae = mean_absolute_error(true, pred)
-    rmse = np.sqrt(mean_squared_error(true, pred))
+    true = np.array(true)
+    pred = np.array(pred)
+    mae = np.mean(np.abs(true - pred))
+    rmse = np.sqrt(np.mean((true - pred) ** 2))
     accuracy = 100 - (mae / np.mean(true) * 100)
     return mae, rmse, accuracy
 
@@ -67,7 +70,7 @@ if train_file and test_file:
         lstm_model = Sequential()
         lstm_model.add(LSTM(50, activation='relu', input_shape=(n_input, 1)))
         lstm_model.add(Dense(1))
-        lstm_model.compile(optimizer='adam', loss='mse')
+        lstm_model.compile(optimizer=Adam(), loss=MeanSquaredError(), metrics=[MeanAbsoluteError()])
         lstm_model.fit(generator, epochs=10, verbose=0)
         test_series = np.concatenate((series[-n_input:], test_df['power_demand'].values))
         predictions = []
@@ -77,19 +80,11 @@ if train_file and test_file:
             predictions.append(pred[0][0])
         forecast = predictions
 
-    elif selected_model == "Random Forest":
+    elif selected_model in ["Random Forest", "XGBoost"]:
         X_train = np.arange(len(train_data)).reshape(-1, 1)
         y_train = train_data['power_demand'].values
         X_test = np.arange(len(train_data), len(train_data) + len(test_df)).reshape(-1, 1)
-        model = RandomForestRegressor()
-        model.fit(X_train, y_train)
-        forecast = model.predict(X_test)
-
-    elif selected_model == "XGBoost":
-        X_train = np.arange(len(train_data)).reshape(-1, 1)
-        y_train = train_data['power_demand'].values
-        X_test = np.arange(len(train_data), len(train_data) + len(test_df)).reshape(-1, 1)
-        model = XGBRegressor()
+        model = XGBRegressor(n_estimators=100 if selected_model == "Random Forest" else 200)
         model.fit(X_train, y_train)
         forecast = model.predict(X_test)
 
