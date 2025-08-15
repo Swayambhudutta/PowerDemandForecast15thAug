@@ -1,79 +1,69 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import altair as alt
 
-# -------------------------------
-# Helper: Simple Linear Regression
-# -------------------------------
-class SimpleLinearRegression:
-    def fit(self, X, y):
-        X = np.array(X).flatten()
-        y = np.array(y).flatten()
-        self.coef_ = np.cov(X, y, bias=True)[0, 1] / np.var(X)
-        self.intercept_ = np.mean(y) - self.coef_ * np.mean(X)
+# Sidebar - weightages
+st.sidebar.header("Model Weightages")
+weight_feature1 = st.sidebar.slider("Weight for Feature 1", 0.0, 1.0, 0.5)
+weight_feature2 = st.sidebar.slider("Weight for Feature 2", 0.0, 1.0, 0.5)
 
-    def predict(self, X):
-        X = np.array(X).flatten()
-        return self.coef_ * X + self.intercept_
+st.title("Power Demand Forecast with Prediction Graph")
 
+# File upload
+uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+if uploaded_file is not None:
+    data = pd.read_csv(uploaded_file)
 
-# -------------------------------
-# Streamlit App
-# -------------------------------
-st.title("📈 Power Demand Forecasting App")
+    st.write("### Preview of Uploaded Data")
+    st.write(data.head())
 
-# Sidebar
-st.sidebar.header("⚙️ Configuration")
+    # Assume first column is Date/Time, last column is target
+    features = data.iloc[:, 1:-1]
+    target = data.iloc[:, -1]
 
-uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
-test_ratio = st.sidebar.slider("Test data ratio", 0.1, 0.9, 0.2, 0.05)
+    # Apply weightages (if at least 2 features)
+    if features.shape[1] >= 2:
+        features.iloc[:, 0] *= weight_feature1
+        features.iloc[:, 1] *= weight_feature2
 
-feature_col = st.sidebar.text_input("Feature Column (X)", "Feature")
-target_col = st.sidebar.text_input("Target Column (y)", "Target")
+    # Train-test split
+    split = int(len(data) * 0.8)
+    X_train, X_test = features[:split], features[split:]
+    y_train, y_test = target[:split], target[split:]
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.subheader("Uploaded Data Preview")
-    st.dataframe(df.head())
+    # Model training
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
 
-    if feature_col in df.columns and target_col in df.columns:
-        # Split data
-        train_size = int(len(df) * (1 - test_ratio))
-        X_train, X_test = df[feature_col][:train_size], df[feature_col][train_size:]
-        y_train, y_test = df[target_col][:train_size], df[target_col][train_size:]
+    # Accuracy metrics
+    mae = mean_absolute_error(y_test, predictions)
+    mse = mean_squared_error(y_test, predictions)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(y_test, predictions)
 
-        # Train model
-        model = SimpleLinearRegression()
-        model.fit(X_train, y_train)
+    st.write("### Statistical Accuracy")
+    st.write(f"**MAE:** {mae:.2f}")
+    st.write(f"**MSE:** {mse:.2f}")
+    st.write(f"**RMSE:** {rmse:.2f}")
+    st.write(f"**R² Score:** {r2:.2f}")
 
-        # Predictions
-        y_pred = model.predict(X_test)
+    # Prediction vs Actual chart
+    chart_data = pd.DataFrame({
+        "Actual": y_test.values,
+        "Predicted": predictions
+    })
 
-        # Accuracy metrics
-        mae = np.mean(np.abs(y_test - y_pred))
-        mse = np.mean((y_test - y_pred) ** 2)
-        rmse = np.sqrt(mse)
-        r2 = 1 - (np.sum((y_test - y_pred) ** 2) / np.sum((y_test - np.mean(y_test)) ** 2))
+    chart_data["Index"] = chart_data.index
 
-        st.subheader("📊 Model Performance Metrics")
-        st.write(f"**MAE:** {mae:.4f}")
-        st.write(f"**MSE:** {mse:.4f}")
-        st.write(f"**RMSE:** {rmse:.4f}")
-        st.write(f"**R² Score:** {r2:.4f}")
-
-        # Graph - Actual vs Predicted
-        st.subheader("📉 Actual vs Predicted (Test Data)")
-        fig, ax = plt.subplots()
-        ax.plot(y_test.values, label="Actual", marker="o")
-        ax.plot(y_pred, label="Predicted", marker="x")
-        ax.set_xlabel("Test Data Index")
-        ax.set_ylabel("Target Value")
-        ax.set_title("Actual vs Predicted")
-        ax.legend()
-        st.pyplot(fig)
-
-    else:
-        st.warning("Please enter valid column names from your dataset.")
-else:
-    st.info("Upload a CSV file to begin.")
+    chart = alt.Chart(chart_data).transform_fold(
+        ["Actual", "Predicted"],
+        as_=["Type", "Value"]
+    ).mark_line().encode(
+        x="Index",
+        y="Value:Q",
+        color="Type:N"
+    ).properties(
