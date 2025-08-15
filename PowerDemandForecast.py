@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
+import altair as alt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from statsmodels.tsa.arima.model import ARIMA
-from prophet import Prophet
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
@@ -19,7 +18,7 @@ st.title("⚡ Dynamic Power Demand Forecasting")
 
 # Sidebar
 st.sidebar.header("Model Configuration")
-model_options = ["Prophet", "ARIMA", "LSTM", "Random Forest", "XGBoost"]
+model_options = ["ARIMA", "LSTM", "Random Forest", "XGBoost"]
 selected_model = st.sidebar.selectbox("Choose Forecasting Model", model_options)
 train_split = st.sidebar.slider("Training Data Percentage", min_value=50, max_value=95, value=80)
 
@@ -59,18 +58,9 @@ if train_file and test_file:
 
     split_index = int(len(train_df) * train_split / 100)
     train_data = train_df.iloc[:split_index]
-    val_data = train_df.iloc[split_index:]
 
     forecast = []
-    if selected_model == "Prophet":
-        df_prophet = train_data[['timestamp', 'power_demand']].rename(columns={'timestamp': 'ds', 'power_demand': 'y'})
-        model = Prophet()
-        model.fit(df_prophet)
-        future = test_df[['timestamp']].rename(columns={'timestamp': 'ds'})
-        forecast_df = model.predict(future)
-        forecast = forecast_df['yhat'].values
-
-    elif selected_model == "ARIMA":
+    if selected_model == "ARIMA":
         model = ARIMA(train_data['power_demand'], order=(5,1,0))
         model_fit = model.fit()
         forecast = model_fit.forecast(steps=len(test_df))
@@ -116,16 +106,24 @@ if train_file and test_file:
     st.sidebar.write(f"Accuracy: {accuracy:.2f}%")
     st.sidebar.write(generate_suggestion(accuracy))
 
-    # Plot using Plotly
+    # Plot using Altair
     st.subheader("Forecast vs Actual")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=test_df['timestamp'], y=test_df['power_demand'], mode='lines', name='Actual'))
-    fig.add_trace(go.Scatter(x=test_df['timestamp'], y=forecast, mode='lines', name='Forecast'))
-    fig.update_layout(title=f"Forecast vs Actual for {selected_state}",
-                      xaxis_title="Timestamp",
-                      yaxis_title="Power Demand",
-                      legend_title="Legend")
-    st.plotly_chart(fig, use_container_width=True)
+    plot_df = pd.DataFrame({
+        'timestamp': test_df['timestamp'],
+        'Actual': test_df['power_demand'],
+        'Forecast': forecast
+    })
+    plot_df = plot_df.melt('timestamp', var_name='Type', value_name='Power Demand')
+    chart = alt.Chart(plot_df).mark_line().encode(
+        x='timestamp:T',
+        y='Power Demand:Q',
+        color='Type:N'
+    ).properties(
+        width=800,
+        height=400,
+        title=f"Forecast vs Actual for {selected_state}"
+    )
+    st.altair_chart(chart, use_container_width=True)
 
     # Summary
     st.markdown("### Summary")
