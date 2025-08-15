@@ -1,128 +1,120 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+import plotly.express as px
 import plotly.graph_objects as go
 
-# App title
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from sklearn.metrics import mean_squared_error
+
 st.set_page_config(page_title="Multi-Model Hybrid Forecast", layout="wide")
-st.title("🔮 Multi-Model Hybrid Power Demand Forecast")
 
-st.markdown("""
-This app trains a **multi-model hybrid regression** model to forecast demand using multiple features.
-You can upload your own training and test CSV files, or use the sample data.
-""")
+st.title("⚡ Multi-Model Hybrid Power Demand Forecasting App")
 
-# File upload
-train_file = st.file_uploader("Upload Training CSV", type=["csv"])
-test_file = st.file_uploader("Upload Test CSV", type=["csv"])
+# ------------------------------
+# File Upload
+# ------------------------------
+st.sidebar.header("Upload Your CSV")
+train_file = st.sidebar.file_uploader("Upload Training CSV", type=["csv"])
+test_file = st.sidebar.file_uploader("Upload Test CSV", type=["csv"])
 
-# Load data
 if train_file is not None:
     df_train = pd.read_csv(train_file)
-else:
-    st.info("No training file uploaded. Using sample data...")
-    df_train = pd.read_csv("sample_train.csv")
+    st.subheader("Training Data Preview")
+    st.dataframe(df_train.head())
 
 if test_file is not None:
     df_test = pd.read_csv(test_file)
-else:
-    df_test = pd.read_csv("sample_test.csv")
+    st.subheader("Test Data Preview")
+    st.dataframe(df_test.head())
 
-st.subheader("📊 Training Data Preview")
-st.dataframe(df_train.head())
+# ------------------------------
+# User selects features & target
+# ------------------------------
+if train_file is not None:
+    features = st.multiselect("Select Features (Independent Variables)", df_train.columns.tolist())
+    target = st.selectbox("Select Target Variable (Dependent)", df_train.columns.tolist())
 
-# Target variable selection
-target_col = st.selectbox("Select Target Variable", df_train.columns)
+    if features and target:
+        X = df_train[features]
+        y = df_train[target]
 
-# Feature selection
-feature_cols = st.multiselect(
-    "Select Feature Variables",
-    [col for col in df_train.columns if col != target_col],
-    default=[col for col in df_train.columns if col != target_col]
-)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Prepare data
-X = df_train[feature_cols]
-y = df_train[target_col]
+        # ------------------------------
+        # Train Models
+        # ------------------------------
+        rf = RandomForestRegressor(n_estimators=100, random_state=42)
+        xgb = XGBRegressor(n_estimators=100, random_state=42)
+        lgb = LGBMRegressor(n_estimators=100, random_state=42)
 
-# Scaling
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+        rf.fit(X_train, y_train)
+        xgb.fit(X_train, y_train)
+        lgb.fit(X_train, y_train)
 
-# Train-test split
-X_train, X_val, y_train, y_val = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        # Predictions
+        rf_pred = rf.predict(X_val)
+        xgb_pred = xgb.predict(X_val)
+        lgb_pred = lgb.predict(X_val)
 
-# Models
-models = {
-    "Linear Regression": LinearRegression(),
-    "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
-    "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, random_state=42)
-}
+        # Hybrid prediction = average of models
+        hybrid_pred = (rf_pred + xgb_pred + lgb_pred) / 3
 
-model_preds = {}
-model_rmse = {}
-model_r2 = {}
+        # ------------------------------
+        # Model Performance
+        # ------------------------------
+        rf_rmse = np.sqrt(mean_squared_error(y_val, rf_pred))
+        xgb_rmse = np.sqrt(mean_squared_error(y_val, xgb_pred))
+        lgb_rmse = np.sqrt(mean_squared_error(y_val, lgb_pred))
+        hybrid_rmse = np.sqrt(mean_squared_error(y_val, hybrid_pred))
 
-# Train and evaluate models
-for name, model in models.items():
-    model.fit(X_train, y_train)
-    preds = model.predict(X_val)
-    model_preds[name] = preds
-    model_rmse[name] = np.sqrt(mean_squared_error(y_val, preds))
-    model_r2[name] = r2_score(y_val, preds)
+        st.subheader("📊 Model RMSE Comparison")
+        st.write({
+            "RandomForest RMSE": rf_rmse,
+            "XGBoost RMSE": xgb_rmse,
+            "LightGBM RMSE": lgb_rmse,
+            "Hybrid RMSE": hybrid_rmse
+        })
 
-# Hybrid model (average predictions)
-hybrid_preds = np.mean(np.column_stack(list(model_preds.values())), axis=1)
-model_preds["Hybrid Model"] = hybrid_preds
-model_rmse["Hybrid Model"] = np.sqrt(mean_squared_error(y_val, hybrid_preds))
-model_r2["Hybrid Model"] = r2_score(y_val, hybrid_preds)
+        # ------------------------------
+        # Feature Importance Visualization
+        # ------------------------------
+        rf_importances = rf.feature_importances_
+        xgb_importances = xgb.feature_importances_
+        lgb_importances = lgb.feature_importances_
 
-# Model performance table
-st.subheader("📈 Model Performance")
-perf_df = pd.DataFrame({
-    "RMSE": model_rmse,
-    "R² Score": model_r2
-}).sort_values(by="RMSE")
-st.dataframe(perf_df)
+        avg_importances = (rf_importances + xgb_importances + lgb_importances) / 3
+        feature_df = pd.DataFrame({
+            "Feature": features,
+            "Avg Weight": avg_importances,
+            "RF Weight": rf_importances,
+            "XGB Weight": xgb_importances,
+            "LGBM Weight": lgb_importances
+        }).sort_values(by="Avg Weight", ascending=False)
 
-# Feature importance visualization (from Random Forest)
-st.subheader("📌 Feature Importances (Random Forest)")
-rf_importances = models["Random Forest"].feature_importances_
-importance_df = pd.DataFrame({
-    "Feature": feature_cols,
-    "Importance": rf_importances
-}).sort_values(by="Importance", ascending=False)
+        st.subheader("🔍 Feature Weightages Across Models")
+        fig = px.bar(feature_df, x="Feature", y="Avg Weight", title="Average Feature Importance")
+        st.plotly_chart(fig, use_container_width=True)
 
-fig = go.Figure(data=[go.Bar(
-    x=importance_df["Feature"],
-    y=importance_df["Importance"],
-    text=importance_df["Importance"].round(3),
-    textposition='auto'
-)])
-fig.update_layout(title="Feature Importance Weights", xaxis_title="Features", yaxis_title="Weight")
-st.plotly_chart(fig)
+        st.dataframe(feature_df)
 
-# Predict on test data
-st.subheader("🔍 Test Data Predictions (Hybrid Model)")
-X_test = df_test[feature_cols]
-X_test_scaled = scaler.transform(X_test)
-test_preds = np.mean([
-    models["Linear Regression"].predict(X_test_scaled),
-    models["Random Forest"].predict(X_test_scaled),
-    models["Gradient Boosting"].predict(X_test_scaled)
-], axis=0)
-df_test["Predicted_" + target_col] = test_preds
-st.dataframe(df_test)
+        # ------------------------------
+        # Predict on Test Data
+        # ------------------------------
+        if test_file is not None:
+            X_test = df_test[features]
+            rf_test_pred = rf.predict(X_test)
+            xgb_test_pred = xgb.predict(X_test)
+            lgb_test_pred = lgb.predict(X_test)
 
-# Download predictions
-st.download_button(
-    label="📥 Download Predictions",
-    data=df_test.to_csv(index=False).encode("utf-8"),
-    file_name="predictions.csv",
-    mime="text/csv"
-)
+            hybrid_test_pred = (rf_test_pred + xgb_test_pred + lgb_test_pred) / 3
+            df_test["Predicted_Target"] = hybrid_test_pred
+
+            st.subheader("📈 Test Predictions")
+            st.dataframe(df_test)
+
+            csv_out = df_test.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Predictions CSV", csv_out, "predictions.csv", "text/csv")
