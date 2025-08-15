@@ -1,69 +1,63 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import altair as alt
 
-# Sidebar - weightages
-st.sidebar.header("Model Weightages")
-weight_feature1 = st.sidebar.slider("Weight for Feature 1", 0.0, 1.0, 0.5)
-weight_feature2 = st.sidebar.slider("Weight for Feature 2", 0.0, 1.0, 0.5)
+st.set_page_config(page_title="Multi-Model Hybrid Power Demand Forecast", layout="wide")
 
-st.title("Power Demand Forecast with Prediction Graph")
+st.title("⚡ Multi-Model Hybrid Power Demand Forecast")
 
-# File upload
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
+# Sidebar
+st.sidebar.header("Upload Data & Configure Model")
+uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
-    st.write("### Preview of Uploaded Data")
-    st.write(data.head())
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.subheader("📊 Preview of Data")
+    st.dataframe(df.head())
 
-    # Assume first column is Date/Time, last column is target
-    features = data.iloc[:, 1:-1]
-    target = data.iloc[:, -1]
+    target_col = st.sidebar.selectbox("Select Target Variable", df.columns)
+    feature_cols = st.sidebar.multiselect(
+        "Select Feature Variables", [col for col in df.columns if col != target_col]
+    )
 
-    # Apply weightages (if at least 2 features)
-    if features.shape[1] >= 2:
-        features.iloc[:, 0] *= weight_feature1
-        features.iloc[:, 1] *= weight_feature2
+    if feature_cols:
+        st.sidebar.subheader("Assign Weightages")
+        weights = {}
+        for col in feature_cols:
+            weights[col] = st.sidebar.slider(f"Weight for {col}", 0.0, 5.0, 1.0, 0.1)
 
-    # Train-test split
-    split = int(len(data) * 0.8)
-    X_train, X_test = features[:split], features[split:]
-    y_train, y_test = target[:split], target[split:]
+        # Apply weights
+        for col in feature_cols:
+            df[col] = df[col] * weights[col]
 
-    # Model training
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
+        # Train-test split
+        X = df[feature_cols]
+        y = df[target_col]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Accuracy metrics
-    mae = mean_absolute_error(y_test, predictions)
-    mse = mean_squared_error(y_test, predictions)
-    rmse = np.sqrt(mse)
-    r2 = r2_score(y_test, predictions)
+        # Models
+        lr = LinearRegression()
+        rf = RandomForestRegressor(random_state=42)
+        gb = GradientBoostingRegressor(random_state=42)
 
-    st.write("### Statistical Accuracy")
-    st.write(f"**MAE:** {mae:.2f}")
-    st.write(f"**MSE:** {mse:.2f}")
-    st.write(f"**RMSE:** {rmse:.2f}")
-    st.write(f"**R² Score:** {r2:.2f}")
+        # Train models
+        lr.fit(X_train, y_train)
+        rf.fit(X_train, y_train)
+        gb.fit(X_train, y_train)
 
-    # Prediction vs Actual chart
-    chart_data = pd.DataFrame({
-        "Actual": y_test.values,
-        "Predicted": predictions
-    })
+        # Predictions
+        pred_lr = lr.predict(X_test)
+        pred_rf = rf.predict(X_test)
+        pred_gb = gb.predict(X_test)
 
-    chart_data["Index"] = chart_data.index
+        # Hybrid prediction (average of models)
+        pred_hybrid = (pred_lr + pred_rf + pred_gb) / 3
 
-    chart = alt.Chart(chart_data).transform_fold(
-        ["Actual", "Predicted"],
-        as_=["Type", "Value"]
-    ).mark_line().encode(
-        x="Index",
-        y="Value:Q",
-        color="Type:N"
-    ).properties(
+        # Metrics
+        r2 = r2_score(y_test, pred_hybrid)
+        rmse = np.sqrt(mean_squared_error(y
