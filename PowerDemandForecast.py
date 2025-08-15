@@ -1,118 +1,86 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.metrics import mean_squared_error, r2_score
-import xgboost as xgb
-from lightgbm import LGBMRegressor
-
-st.set_page_config(page_title="Hybrid Power Demand Forecasting", layout="wide")
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # Title
-st.title("⚡ Multi-Model Hybrid Power Demand Forecasting App")
+st.title("Multi-Model Hybrid Forecasting App")
 
-# File uploader
-uploaded_train = st.file_uploader("Upload Training CSV", type=["csv"])
-uploaded_test = st.file_uploader("Upload Testing CSV (Optional)", type=["csv"])
+# File uploaders
+train_file = st.file_uploader("Upload Training CSV", type="csv")
+test_file = st.file_uploader("Upload Testing CSV", type="csv")
 
-# Model selection
-models_selected = st.multiselect(
-    "Select Models for Hybrid Prediction",
-    ["Linear Regression", "Random Forest", "Gradient Boosting", "XGBoost", "LightGBM"],
-    default=["Linear Regression", "Random Forest", "Gradient Boosting"]
-)
+if train_file and test_file:
+    train_df = pd.read_csv(train_file)
+    test_df = pd.read_csv(test_file)
 
-# Weightage inputs
-st.subheader("🔢 Model Weightages")
-weights = {}
-total_weight = 0
-for model in models_selected:
-    weight = st.number_input(f"Weight for {model}", min_value=0.0, max_value=1.0, value=1.0/len(models_selected))
-    weights[model] = weight
-    total_weight += weight
+    st.subheader("Training Data")
+    st.write(train_df.head())
 
-if total_weight == 0:
-    st.error("Total weight cannot be zero!")
+    st.subheader("Testing Data")
+    st.write(test_df.head())
 
-# Proceed if file uploaded
-if uploaded_train:
-    train_df = pd.read_csv(uploaded_train)
-    st.write("### Training Data Preview", train_df.head())
+    # Select target and features
+    target_var = st.selectbox("Select Target Variable", train_df.columns)
+    feature_vars = st.multiselect("Select Feature Variables", [col for col in train_df.columns if col != target_var], default=list(train_df.columns[:-1]))
 
-    # Allow user to select target and features
-    target_col = st.selectbox("Select Target Variable", train_df.columns)
-    feature_cols = st.multiselect("Select Feature Columns", [c for c in train_df.columns if c != target_col], default=[c for c in train_df.columns if c != target_col])
+    # Weightages input
+    st.subheader("Assign Weightages to Models (Total should be 1.0)")
+    w_lr = st.number_input("Weightage for Linear Regression", min_value=0.0, max_value=1.0, value=0.33)
+    w_rf = st.number_input("Weightage for Random Forest", min_value=0.0, max_value=1.0, value=0.33)
+    w_gb = st.number_input("Weightage for Gradient Boosting", min_value=0.0, max_value=1.0, value=0.34)
 
-    if feature_cols:
-        X = train_df[feature_cols]
-        y = train_df[target_col]
-
-        # Train-test split
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Store predictions
-        val_predictions = pd.DataFrame(index=y_val.index)
-
+    if abs((w_lr + w_rf + w_gb) - 1.0) > 0.001:
+        st.warning("The sum of weightages must be 1.0")
+    else:
         # Train models
-        for model in models_selected:
-            if model == "Linear Regression":
-                m = LinearRegression()
-            elif model == "Random Forest":
-                m = RandomForestRegressor(n_estimators=100, random_state=42)
-            elif model == "Gradient Boosting":
-                m = GradientBoostingRegressor(n_estimators=100, random_state=42)
-            elif model == "XGBoost":
-                m = xgb.XGBRegressor(n_estimators=100, random_state=42)
-            elif model == "LightGBM":
-                m = LGBMRegressor(n_estimators=100, random_state=42)
+        X_train = train_df[feature_vars]
+        y_train = train_df[target_var]
+        X_test = test_df[feature_vars]
+        y_test = test_df[target_var]
 
-            m.fit(X_train, y_train)
-            preds = m.predict(X_val)
-            val_predictions[model] = preds
+        model_lr = LinearRegression()
+        model_rf = RandomForestRegressor(random_state=42)
+        model_gb = GradientBoostingRegressor(random_state=42)
 
-            rmse = np.sqrt(mean_squared_error(y_val, preds))
-            r2 = r2_score(y_val, preds)
-            st.write(f"**{model}** → RMSE: {rmse:.2f}, R²: {r2:.2f}")
+        model_lr.fit(X_train, y_train)
+        model_rf.fit(X_train, y_train)
+        model_gb.fit(X_train, y_train)
+
+        pred_lr = model_lr.predict(X_test)
+        pred_rf = model_rf.predict(X_test)
+        pred_gb = model_gb.predict(X_test)
 
         # Hybrid prediction
-        val_predictions["Hybrid"] = sum(val_predictions[m] * weights[m] for m in models_selected) / total_weight
+        final_pred = (w_lr * pred_lr) + (w_rf * pred_rf) + (w_gb * pred_gb)
 
-        hybrid_rmse = np.sqrt(mean_squared_error(y_val, val_predictions["Hybrid"]))
-        hybrid_r2 = r2_score(y_val, val_predictions["Hybrid"])
-        st.success(f"**Hybrid Model** → RMSE: {hybrid_rmse:.2f}, R²: {hybrid_r2:.2f}")
+        # Metrics
+        mae = mean_absolute_error(y_test, final_pred)
+        rmse = np.sqrt(mean_squared_error(y_test, final_pred))
+        r2 = r2_score(y_test, final_pred)
 
-        # Plot
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(y=y_val, mode="lines+markers", name="Actual"))
-        for model in models_selected + ["Hybrid"]:
-            fig.add_trace(go.Scatter(y=val_predictions[model], mode="lines", name=model))
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Model Performance (Hybrid)")
+        st.write(f"MAE: {mae:.4f}")
+        st.write(f"RMSE: {rmse:.4f}")
+        st.write(f"R² Score: {r2:.4f}")
 
-        # Testing
-        if uploaded_test:
-            test_df = pd.read_csv(uploaded_test)
-            st.write("### Test Data Preview", test_df.head())
+        # Visualization with Matplotlib
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(y_test.values, label="Actual", marker='o')
+        ax.plot(final_pred, label="Predicted", marker='x')
+        ax.set_title("Actual vs Predicted")
+        ax.set_xlabel("Index")
+        ax.set_ylabel(target_var)
+        ax.legend()
+        st.pyplot(fig)
 
-            test_preds = pd.DataFrame()
-            for model in models_selected:
-                if model == "Linear Regression":
-                    m = LinearRegression()
-                elif model == "Random Forest":
-                    m = RandomForestRegressor(n_estimators=100, random_state=42)
-                elif model == "Gradient Boosting":
-                    m = GradientBoostingRegressor(n_estimators=100, random_state=42)
-                elif model == "XGBoost":
-                    m = xgb.XGBRegressor(n_estimators=100, random_state=42)
-                elif model == "LightGBM":
-                    m = LGBMRegressor(n_estimators=100, random_state=42)
-
-                m.fit(X, y)
-                test_preds[model] = m.predict(test_df[feature_cols])
-
-            test_preds["Hybrid"] = sum(test_preds[m] * weights[m] for m in models_selected) / total_weight
-            st.write("### Test Predictions", test_preds.head())
-            csv = test_preds.to_csv(index=False).encode('utf-8')
-            st.download_button("Download Predictions", csv, "predictions.csv", "text/csv")
+        # Show weightages visually
+        fig2, ax2 = plt.subplots()
+        ax2.bar(["Linear Regression", "Random Forest", "Gradient Boosting"], [w_lr, w_rf, w_gb], color=['blue', 'green', 'orange'])
+        ax2.set_title("Model Weightages")
+        st.pyplot(fig2)
