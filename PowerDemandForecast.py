@@ -28,9 +28,11 @@ if train_file:
 
     features = ['temperature_2m', 'relative_humidity_2m', 'dew_point_2m', 'apparent_temperature',
                 'rain', 'snowfall', 'cloud_cover', 'wind_speed_100m', 'wind_speed_10m', 'hour', 'dayofweek']
+
+    # Clean and validate training data
     df_train = df_train.dropna(subset=features + ['demand'])
-    X_train = df_train[features]
-    y_train = df_train['demand']
+    X_train = df_train[features].apply(pd.to_numeric, errors='coerce').dropna()
+    y_train = pd.to_numeric(df_train.loc[X_train.index, 'demand'], errors='coerce')
 
     models = {
         'Random Forest': RandomForestRegressor(),
@@ -52,8 +54,8 @@ if train_file:
         df_test['hour'] = pd.to_datetime(df_test['time'], errors='coerce').dt.hour
         df_test['dayofweek'] = pd.to_datetime(df_test['date'], errors='coerce').dt.dayofweek
         df_test = df_test.dropna(subset=features + ['demand'])
-        X_test = df_test[features]
-        y_test = df_test['demand']
+        X_test = df_test[features].apply(pd.to_numeric, errors='coerce').dropna()
+        y_test = pd.to_numeric(df_test.loc[X_test.index, 'demand'], errors='coerce')
 
         # Hybrid prediction
         hybrid_pred = sum(model.predict(X_test) * 0.25 for model in models.values())
