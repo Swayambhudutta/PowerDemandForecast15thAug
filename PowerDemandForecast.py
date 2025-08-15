@@ -16,6 +16,16 @@ from sklearn.preprocessing import MinMaxScaler
 
 # Page config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡", layout="wide")
+st.markdown("""
+    <style>
+        section[data-testid="stSidebar"] {
+            width: 350px !important;
+        }
+        div[data-testid="stVerticalBlock"] > div:nth-child(2) {
+            max-width: 700px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 st.title("⚡ Dynamic Power Demand Forecasting")
 
 # Sidebar
@@ -135,12 +145,17 @@ if uploaded_file:
     else:
         st.sidebar.error("Model accuracy is low.")
 
-    # Line plot
+    # Line plot with thinner lines and labeled axes
     st.subheader("Forecasting vs Actual")
-    fig, ax = plt.subplots()
-    ax.plot(y_test[:len(y_pred)].values, label="Actual", linestyle='-', marker='')
-    ax.plot(y_pred, label="Forecast", linestyle='-', marker='')
+    fig, ax = plt.subplots(figsize=(8, 4))  # Smaller graph area
+    ax.plot(df_state['datetime'][-len(y_pred):], y_test[:len(y_pred)], label="Actual", linewidth=1)
+    ax.plot(df_state['datetime'][-len(y_pred):], y_pred, label="Forecast", linewidth=1)
+    ax.set_xlabel("Timeline")
+    ax.set_ylabel("Power Demand")
+    ax.set_title("Forecast vs Actual Power Demand")
     ax.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
     st.pyplot(fig)
 
     # Feature sliders and optimize button below the graph
