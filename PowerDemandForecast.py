@@ -26,14 +26,19 @@ selected_model = st.sidebar.selectbox("Select Forecasting Model", model_options)
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+
     states = df['state'].unique()
     selected_state = st.selectbox("Select State", states)
     df_state = df[df['state'] == selected_state]
 
+    # Robust datetime parsing
+    df_state['datetime'] = pd.to_datetime(df_state['date'].astype(str) + ' ' + df_state['time'].astype(str), errors='coerce')
+    df_state = df_state.dropna(subset=['datetime'])
+
     # Derived features
-    df_state['hour'] = pd.to_datetime(df_state['time']).dt.hour
-    df_state['day_of_week'] = pd.to_datetime(df_state['date']).dt.dayofweek
-    df_state['month'] = pd.to_datetime(df_state['date']).dt.month
+    df_state['hour'] = df_state['datetime'].dt.hour
+    df_state['day_of_week'] = df_state['datetime'].dt.dayofweek
+    df_state['month'] = df_state['datetime'].dt.month
 
     input_features = ['temperature_2m', 'weather_code', 'relative_humidity_2m', 'dew_point_2m',
                       'apparent_temperature', 'rain', 'snowfall', 'cloud_cover',
