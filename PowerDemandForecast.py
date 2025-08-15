@@ -12,22 +12,18 @@ from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 import warnings
 warnings.filterwarnings("ignore")
 
-# App config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡")
 st.title("⚡ Dynamic Power Demand Forecasting")
 
-# Sidebar
 st.sidebar.header("Model Configuration")
 model_options = ["ARIMA", "LSTM", "Random Forest", "XGBoost"]
 selected_model = st.sidebar.selectbox("Choose Forecasting Model", model_options)
 train_split = st.sidebar.slider("Training Data Percentage", min_value=50, max_value=95, value=80)
 
-# Upload data
 st.sidebar.header("Upload Data")
 train_file = st.sidebar.file_uploader("Upload Training Data CSV", type=["csv"])
 test_file = st.sidebar.file_uploader("Upload Testing Data CSV", type=["csv"])
 
-# Accuracy metrics
 def calculate_metrics(true, pred):
     mae = mean_absolute_error(true, pred)
     rmse = np.sqrt(mean_squared_error(true, pred))
@@ -42,7 +38,6 @@ def generate_suggestion(accuracy):
     else:
         return "❌ Model is not accurate. Try different models or feature engineering."
 
-# Main logic
 if train_file and test_file:
     train_df = pd.read_csv(train_file)
     test_df = pd.read_csv(test_file)
@@ -98,7 +93,6 @@ if train_file and test_file:
         model.fit(X_train, y_train)
         forecast = model.predict(X_test)
 
-    # Accuracy
     mae, rmse, accuracy = calculate_metrics(test_df['power_demand'].values, forecast)
     st.sidebar.subheader("Model Accuracy")
     st.sidebar.write(f"MAE: {mae:.2f}")
@@ -106,7 +100,6 @@ if train_file and test_file:
     st.sidebar.write(f"Accuracy: {accuracy:.2f}%")
     st.sidebar.write(generate_suggestion(accuracy))
 
-    # Plot using Altair
     st.subheader("Forecast vs Actual")
     plot_df = pd.DataFrame({
         'timestamp': test_df['timestamp'],
@@ -125,7 +118,6 @@ if train_file and test_file:
     )
     st.altair_chart(chart, use_container_width=True)
 
-    # Summary
     st.markdown("### Summary")
     st.markdown(f"- **State**: {selected_state}")
     st.markdown(f"- **Training Data Percentage**: {train_split}%")
