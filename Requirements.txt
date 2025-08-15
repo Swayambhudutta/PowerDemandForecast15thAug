@@ -1,11 +1,10 @@
+
 streamlit
 pandas
 numpy
-matplotlib
 scikit-learn
 xgboost
 statsmodels
 prophet
-keras
 tensorflow
 plotly
