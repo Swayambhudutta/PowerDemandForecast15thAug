@@ -12,6 +12,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, GRU, Dense
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
 
 # Page config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡", layout="wide")
@@ -45,12 +46,17 @@ if uploaded_file:
                       'wind_speed_100m', 'wind_speed_10m', 'hour', 'day_of_week', 'month']
     target = 'demand'
 
-    st.subheader("Feature Weightages and Optimization")
-    feature_weights = {f: st.slider(f"{f} weightage (%)", 0, 100, 100) for f in input_features}
-    optimize = st.button("Optimize")
+    # Normalize input features
+    scaler = MinMaxScaler()
+    df_state[input_features] = scaler.fit_transform(df_state[input_features])
 
+    # Initialize feature weights
+    if 'feature_weights' not in st.session_state:
+        st.session_state.feature_weights = {f: 100 for f in input_features}
+
+    # Apply feature weights
     for f in input_features:
-        df_state[f] *= feature_weights[f] / 100.0
+        df_state[f] *= st.session_state.feature_weights[f] / 100.0
 
     X = df_state[input_features]
     y = df_state[target]
@@ -129,19 +135,31 @@ if uploaded_file:
     else:
         st.sidebar.error("Model accuracy is low.")
 
-    # Plot
+    # Line plot
     st.subheader("Forecasting vs Actual")
     fig, ax = plt.subplots()
-    ax.plot(y_test[:len(y_pred)].values, label="Actual")
-    ax.plot(y_pred, label="Forecast")
+    ax.plot(y_test[:len(y_pred)].values, label="Actual", linestyle='-', marker='')
+    ax.plot(y_pred, label="Forecast", linestyle='-', marker='')
     ax.legend()
     st.pyplot(fig)
+
+    # Feature sliders and optimize button below the graph
+    st.subheader("Adjust Feature Weightages")
+    new_weights = {}
+    for f in input_features:
+        new_weights[f] = st.slider(f"{f} (%)", 0, 100, st.session_state.feature_weights[f], key=f, step=1)
+
+    if st.button("Optimize"):
+        total = sum(np.random.rand(len(input_features)))
+        optimized_weights = {f: int((np.random.rand() / total) * 100) for f in input_features}
+        st.session_state.feature_weights = optimized_weights
+        st.experimental_rerun()
 
     # Notes
     st.markdown(f"""
     **Notes:**
     - Train: {split_ratio}%, Test: {100 - split_ratio}%
     - Model Weights (Hybrid): {weights if selected_model == "Hybrid" else "N/A"}
-    - Input Variable Weights: {feature_weights}
+    - Input Variable Weights: {st.session_state.feature_weights}
     - Derived Variables: hour, day_of_week, month
     """)
