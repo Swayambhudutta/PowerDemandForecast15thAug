@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
@@ -116,16 +116,16 @@ if train_file and test_file:
     st.sidebar.write(f"Accuracy: {accuracy:.2f}%")
     st.sidebar.write(generate_suggestion(accuracy))
 
-    # Plot
+    # Plot using Plotly
     st.subheader("Forecast vs Actual")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(test_df['timestamp'], test_df['power_demand'].values, label="Actual")
-    ax.plot(test_df['timestamp'], forecast, label="Forecast")
-    ax.set_title(f"Forecast vs Actual for {selected_state}")
-    ax.set_xlabel("Timestamp")
-    ax.set_ylabel("Power Demand")
-    ax.legend()
-    st.pyplot(fig)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=test_df['timestamp'], y=test_df['power_demand'], mode='lines', name='Actual'))
+    fig.add_trace(go.Scatter(x=test_df['timestamp'], y=forecast, mode='lines', name='Forecast'))
+    fig.update_layout(title=f"Forecast vs Actual for {selected_state}",
+                      xaxis_title="Timestamp",
+                      yaxis_title="Power Demand",
+                      legend_title="Legend")
+    st.plotly_chart(fig, use_container_width=True)
 
     # Summary
     st.markdown("### Summary")
