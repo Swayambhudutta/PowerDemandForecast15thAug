@@ -1,97 +1,79 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
+import matplotlib.pyplot as plt
 
-# ---------------------------
-# Title and Sidebar
-# ---------------------------
-st.title("⚡ Power Demand Forecasting Tool")
+# -------------------------------
+# Helper: Simple Linear Regression
+# -------------------------------
+class SimpleLinearRegression:
+    def fit(self, X, y):
+        X = np.array(X).flatten()
+        y = np.array(y).flatten()
+        self.coef_ = np.cov(X, y, bias=True)[0, 1] / np.var(X)
+        self.intercept_ = np.mean(y) - self.coef_ * np.mean(X)
 
-st.sidebar.header("Upload and Settings")
-uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
+    def predict(self, X):
+        X = np.array(X).flatten()
+        return self.coef_ * X + self.intercept_
 
-weight_temp = st.sidebar.slider("Weight for Temperature", 0.0, 2.0, 1.0, 0.1)
-weight_hour = st.sidebar.slider("Weight for Hour", 0.0, 2.0, 1.0, 0.1)
-weight_day = st.sidebar.slider("Weight for Day of Week", 0.0, 2.0, 1.0, 0.1)
-train_split_ratio = st.sidebar.slider("Training Data Split", 0.5, 0.9, 0.8, 0.05)
 
-# ---------------------------
-# Load Data
-# ---------------------------
-if uploaded_file is not None:
+# -------------------------------
+# Streamlit App
+# -------------------------------
+st.title("📈 Power Demand Forecasting App")
+
+# Sidebar
+st.sidebar.header("⚙️ Configuration")
+
+uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+test_ratio = st.sidebar.slider("Test data ratio", 0.1, 0.9, 0.2, 0.05)
+
+feature_col = st.sidebar.text_input("Feature Column (X)", "Feature")
+target_col = st.sidebar.text_input("Target Column (y)", "Target")
+
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
-
-    st.subheader("Preview of Uploaded Data")
+    st.subheader("Uploaded Data Preview")
     st.dataframe(df.head())
 
-    # ---------------------------
-    # Feature Engineering
-    # ---------------------------
-    if not {"Temperature", "Hour", "DayOfWeek", "Demand"}.issubset(df.columns):
-        st.error("CSV must contain 'Temperature', 'Hour', 'DayOfWeek', 'Demand' columns.")
-    else:
-        # Apply weightages
-        df["Temp_w"] = df["Temperature"] * weight_temp
-        df["Hour_w"] = df["Hour"] * weight_hour
-        df["Day_w"] = df["DayOfWeek"] * weight_day
+    if feature_col in df.columns and target_col in df.columns:
+        # Split data
+        train_size = int(len(df) * (1 - test_ratio))
+        X_train, X_test = df[feature_col][:train_size], df[feature_col][train_size:]
+        y_train, y_test = df[target_col][:train_size], df[target_col][train_size:]
 
-        # Prepare features and labels
-        X = df[["Temp_w", "Hour_w", "Day_w"]].values
-        y = df["Demand"].values
-
-        # ---------------------------
-        # Train/Test Split
-        # ---------------------------
-        split_idx = int(len(X) * train_split_ratio)
-        X_train, X_test = X[:split_idx], X[split_idx:]
-        y_train, y_test = y[:split_idx], y[split_idx:]
-
-        # ---------------------------
-        # Simple Linear Regression (No sklearn)
-        # ---------------------------
-        X_train_bias = np.c_[np.ones(X_train.shape[0]), X_train]  # Add bias term
-        X_test_bias = np.c_[np.ones(X_test.shape[0]), X_test]
-
-        # Normal Equation: θ = (XᵀX)⁻¹ Xᵀy
-        theta = np.linalg.inv(X_train_bias.T @ X_train_bias) @ X_train_bias.T @ y_train
+        # Train model
+        model = SimpleLinearRegression()
+        model.fit(X_train, y_train)
 
         # Predictions
-        y_pred_train = X_train_bias @ theta
-        y_pred_test = X_test_bias @ theta
+        y_pred = model.predict(X_test)
 
-        # ---------------------------
-        # Accuracy Metrics
-        # ---------------------------
-        mae = np.mean(np.abs(y_test - y_pred_test))
-        rmse = np.sqrt(np.mean((y_test - y_pred_test) ** 2))
-        ss_total = np.sum((y_test - np.mean(y_test)) ** 2)
-        ss_residual = np.sum((y_test - y_pred_test) ** 2)
-        r2 = 1 - (ss_residual / ss_total)
+        # Accuracy metrics
+        mae = np.mean(np.abs(y_test - y_pred))
+        mse = np.mean((y_test - y_pred) ** 2)
+        rmse = np.sqrt(mse)
+        r2 = 1 - (np.sum((y_test - y_pred) ** 2) / np.sum((y_test - np.mean(y_test)) ** 2))
 
-        st.subheader("📊 Model Accuracy Metrics")
-        st.write(f"**Mean Absolute Error (MAE):** {mae:.2f}")
-        st.write(f"**Root Mean Squared Error (RMSE):** {rmse:.2f}")
+        st.subheader("📊 Model Performance Metrics")
+        st.write(f"**MAE:** {mae:.4f}")
+        st.write(f"**MSE:** {mse:.4f}")
+        st.write(f"**RMSE:** {rmse:.4f}")
         st.write(f"**R² Score:** {r2:.4f}")
 
-        # ---------------------------
-        # Prediction Graph
-        # ---------------------------
-        st.subheader("📈 Prediction vs Actual (Test Data)")
-        chart_data = pd.DataFrame({
-            "Actual Demand": y_test,
-            "Predicted Demand": y_pred_test
-        }).reset_index(drop=True)
-        st.line_chart(chart_data)
+        # Graph - Actual vs Predicted
+        st.subheader("📉 Actual vs Predicted (Test Data)")
+        fig, ax = plt.subplots()
+        ax.plot(y_test.values, label="Actual", marker="o")
+        ax.plot(y_pred, label="Predicted", marker="x")
+        ax.set_xlabel("Test Data Index")
+        ax.set_ylabel("Target Value")
+        ax.set_title("Actual vs Predicted")
+        ax.legend()
+        st.pyplot(fig)
 
-        # ---------------------------
-        # Model Details
-        # ---------------------------
-        st.subheader("Model Coefficients")
-        coef_df = pd.DataFrame({
-            "Feature": ["Bias", "Temp_w", "Hour_w", "Day_w"],
-            "Coefficient": theta
-        })
-        st.table(coef_df)
+    else:
+        st.warning("Please enter valid column names from your dataset.")
 else:
-    st.info("Please upload a CSV file to begin.")
+    st.info("Upload a CSV file to begin.")
