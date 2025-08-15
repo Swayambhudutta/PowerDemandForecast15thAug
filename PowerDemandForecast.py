@@ -1,76 +1,56 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
 
-# Title
-st.title("Multi-Model Hybrid Power Demand Forecasting")
+# ------------------------------
+# Simulated Data (Replace with your CSV if needed)
+# ------------------------------
+def generate_sample_data():
+    np.random.seed(42)
+    days = np.arange(1, 31)  # 30 days
+    demand = 200 + 5 * days + np.random.normal(0, 10, size=len(days))
+    return pd.DataFrame({"Day": days, "Demand": demand})
 
-# Upload CSV
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.subheader("Uploaded Data")
-    st.dataframe(df)
+# ------------------------------
+# Simple Linear Regression (No sklearn)
+# ------------------------------
+def simple_linear_regression(x, y):
+    # Formula: y = m*x + c
+    m = np.cov(x, y, bias=True)[0, 1] / np.var(x)
+    c = np.mean(y) - m * np.mean(x)
+    return m, c
 
-    # Select features and target
-    target_col = st.selectbox("Select Target Variable (Demand)", df.columns)
-    feature_cols = st.multiselect("Select Feature Variables", [c for c in df.columns if c != target_col])
+# ------------------------------
+# Streamlit App
+# ------------------------------
+st.title("⚡ Power Demand Forecast")
+st.write("Forecast daily power demand using a simple linear regression (no sklearn).")
 
-    if feature_cols:
-        # Assign weights for each feature
-        st.subheader("Assign Weights to Features")
-        weights = {}
-        for col in feature_cols:
-            weights[col] = st.slider(f"Weight for {col}", 0.0, 1.0, 0.5)
+# Load Data
+df = generate_sample_data()
+st.subheader("Sample Power Demand Data")
+st.dataframe(df)
 
-        # Weighted feature transformation
-        X = df[feature_cols].copy()
-        for col in feature_cols:
-            X[col] = X[col] * weights[col]
-        y = df[target_col]
+# Train Model
+X = df["Day"].values
+y = df["Demand"].values
+m, c = simple_linear_regression(X, y)
 
-        # Train-Test split (manual to avoid train_test_split dependency)
-        split_idx = int(len(df) * 0.8)
-        X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-        y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+# Predict for next 7 days
+future_days = np.arange(max(X) + 1, max(X) + 8)
+future_demand = m * future_days + c
+forecast_df = pd.DataFrame({"Day": future_days, "Predicted Demand": future_demand})
 
-        # Model 1: Linear Regression
-        lr = LinearRegression()
-        lr.fit(X_train, y_train)
-        y_pred_lr = lr.predict(X_test)
+# Show Results
+st.subheader("Forecasted Demand for Next 7 Days")
+st.dataframe(forecast_df)
 
-        # Model 2: Random Forest
-        rf = RandomForestRegressor(random_state=42)
-        rf.fit(X_train, y_train)
-        y_pred_rf = rf.predict(X_test)
+# Chart (Streamlit built-in, no matplotlib/plotly)
+st.subheader("Demand Forecast Chart")
+chart_df = pd.concat([
+    df.rename(columns={"Demand": "Value"}).assign(Type="Actual"),
+    forecast_df.rename(columns={"Predicted Demand": "Value"}).assign(Type="Forecast")
+])
+st.line_chart(chart_df.pivot(index="Day", columns="Type", values="Value"))
 
-        # Hybrid prediction (average of both models)
-        y_pred_hybrid = (y_pred_lr + y_pred_rf) / 2
-
-        # Metrics
-        st.subheader("Model Performance")
-        st.write(f"Linear Regression R²: {r2_score(y_test, y_pred_lr):.3f}")
-        st.write(f"Random Forest R²: {r2_score(y_test, y_pred_rf):.3f}")
-        st.write(f"Hybrid Model R²: {r2_score(y_test, y_pred_hybrid):.3f}")
-
-        # Combine results for plotting
-        results_df = pd.DataFrame({
-            "Actual": y_test.values,
-            "Linear Regression": y_pred_lr,
-            "Random Forest": y_pred_rf,
-            "Hybrid": y_pred_hybrid
-        })
-
-        st.subheader("Forecast vs Actual")
-        st.line_chart(results_df)
-
-        # Show feature weights
-        weight_df = pd.DataFrame(list(weights.items()), columns=["Feature", "Weight"])
-        st.subheader("Feature Weights")
-        st.bar_chart(weight_df.set_index("Feature"))
-else:
-    st.info("Please upload a CSV file to proceed.")
+st.success("✅ Forecast completed without sklearn/matplotlib/plotly.")
