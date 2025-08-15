@@ -12,14 +12,12 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, GRU, Dense
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 
-# Page config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡", layout="wide")
 st.title("⚡ Dynamic Power Demand Forecasting")
 
-# Sidebar
 st.sidebar.header("Model Configuration")
 uploaded_file = st.sidebar.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
 split_ratio = st.sidebar.slider("Train-Test Split (%)", 50, 90, 80)
@@ -31,13 +29,11 @@ if uploaded_file:
 
     states = df['state'].unique()
     selected_state = st.selectbox("Select State", states)
-    df_state = df[df['state'] == selected_state]
+    df_state = df[df['state'] == selected_state].copy()
 
-    # Robust datetime parsing
     df_state['datetime'] = pd.to_datetime(df_state['date'].astype(str) + ' ' + df_state['time'].astype(str), errors='coerce')
     df_state = df_state.dropna(subset=['datetime'])
 
-    # Derived features
     df_state['hour'] = df_state['datetime'].dt.hour
     df_state['day_of_week'] = df_state['datetime'].dt.dayofweek
     df_state['month'] = df_state['datetime'].dt.month
@@ -47,15 +43,12 @@ if uploaded_file:
                       'wind_speed_100m', 'wind_speed_10m', 'hour', 'day_of_week', 'month']
     target = 'demand'
 
-    # Normalize input features
     scaler = MinMaxScaler()
     df_state[input_features] = scaler.fit_transform(df_state[input_features])
 
-    # Initialize feature weights
     if 'feature_weights' not in st.session_state:
         st.session_state.feature_weights = {f: 100 for f in input_features}
 
-    # Apply feature weights
     for f in input_features:
         df_state[f] *= st.session_state.feature_weights[f] / 100.0
 
@@ -117,7 +110,6 @@ if uploaded_file:
         pred_gru = train_dl_model("GRU")
         y_pred = weights["XGBoost"] * pred_xgb[:len(pred_lstm)] + weights["LSTM"] * pred_lstm + weights["GRU"] * pred_gru
 
-    # Accuracy
     mae = mean_absolute_error(y_test[:len(y_pred)], y_pred)
     mse = mean_squared_error(y_test[:len(y_pred)], y_pred)
     r2 = r2_score(y_test[:len(y_pred)], y_pred)
@@ -136,7 +128,6 @@ if uploaded_file:
     else:
         st.sidebar.error("Model accuracy is low.")
 
-    # Line plot
     st.subheader("Forecasting vs Actual")
     fig, ax = plt.subplots()
     ax.plot(y_test[:len(y_pred)].values, label="Actual", linestyle='-', marker='')
@@ -144,7 +135,6 @@ if uploaded_file:
     ax.legend()
     st.pyplot(fig)
 
-    # Feature sliders and optimize button below the graph
     st.subheader("Adjust Feature Weightages")
     new_weights = {}
     for f in input_features:
@@ -156,7 +146,6 @@ if uploaded_file:
         st.session_state.feature_weights = optimized_weights
         st.experimental_rerun()
 
-    # Notes
     st.markdown(f"""
     **Notes:**
     - Train: {split_ratio}%, Test: {100 - split_ratio}%
