@@ -16,16 +16,10 @@ from sklearn.preprocessing import MinMaxScaler
 
 # Page config
 st.set_page_config(page_title="Dynamic Power Demand Forecasting", page_icon="⚡", layout="wide")
-st.markdown("""
-    <style>
-        section[data-testid="stSidebar"] {
-            width: 350px !important;
-        }
-        div[data-testid="stVerticalBlock"] > div:nth-child(2) {
-            max-width: 700px;
-        }
-    </style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>
+    section[data-testid="stSidebar"] {width: 350px !important;}
+    div[data-testid="stVerticalBlock"] > div:nth-child(2) {max-width: 700px;}
+</style>""", unsafe_allow_html=True)
 st.title("⚡ Dynamic Power Demand Forecasting")
 
 # Sidebar
@@ -40,35 +34,39 @@ if uploaded_file:
 
     states = df['state'].unique()
     selected_state = st.selectbox("Select State", states)
-    df_state = df[df['state'] == selected_state]
+    df_state = df[df['state'] == selected_state].copy()
 
     # Robust datetime parsing
     df_state['datetime'] = pd.to_datetime(df_state['date'].astype(str) + ' ' + df_state['time'].astype(str), errors='coerce')
     df_state = df_state.dropna(subset=['datetime'])
 
     # Derived features
-    df_state['hour'] = df_state['datetime'].dt.hour
-    df_state['day_of_week'] = df_state['datetime'].dt.dayofweek
-    df_state['month'] = df_state['datetime'].dt.month
+    df_state['demand_lag1'] = df_state['demand'].shift(1)
+    df_state['demand_lag2'] = df_state['demand'].shift(2)
+    df_state['demand_roll3'] = df_state['demand'].rolling(window=3).mean()
+    df_state['demand_roll6'] = df_state['demand'].rolling(window=6).mean()
+    df_state = df_state.dropna()
 
     input_features = ['temperature_2m', 'weather_code', 'relative_humidity_2m', 'dew_point_2m',
                       'apparent_temperature', 'rain', 'snowfall', 'cloud_cover',
-                      'wind_speed_100m', 'wind_speed_10m', 'hour', 'day_of_week', 'month']
+                      'wind_speed_100m', 'wind_speed_10m']
+    derived_features = ['demand_lag1', 'demand_lag2', 'demand_roll3', 'demand_roll6']
+    all_features = input_features + derived_features
     target = 'demand'
 
-    # Normalize input features
+    # Normalize features
     scaler = MinMaxScaler()
-    df_state[input_features] = scaler.fit_transform(df_state[input_features])
+    df_state[all_features] = scaler.fit_transform(df_state[all_features])
 
     # Initialize feature weights
     if 'feature_weights' not in st.session_state:
-        st.session_state.feature_weights = {f: 100 for f in input_features}
+        st.session_state.feature_weights = {f: 100 for f in all_features}
 
     # Apply feature weights
-    for f in input_features:
+    for f in all_features:
         df_state[f] *= st.session_state.feature_weights[f] / 100.0
 
-    X = df_state[input_features]
+    X = df_state[all_features]
     y = df_state[target]
     X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=split_ratio/100, shuffle=False)
 
@@ -146,8 +144,8 @@ if uploaded_file:
         st.sidebar.error("Model accuracy is low.")
 
     # Line plot with thinner lines and labeled axes
-    st.subheader("Forecasting vs Actual")
-    fig, ax = plt.subplots(figsize=(8, 4))  # Smaller graph area
+    st.subheader("Forecasting vs Actual Power Demand")
+    fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(df_state['datetime'][-len(y_pred):], y_test[:len(y_pred)], label="Actual", linewidth=1)
     ax.plot(df_state['datetime'][-len(y_pred):], y_pred, label="Forecast", linewidth=1)
     ax.set_xlabel("Timeline")
@@ -158,24 +156,29 @@ if uploaded_file:
     plt.tight_layout()
     st.pyplot(fig)
 
-    # Feature sliders and optimize button below the graph
+    # Feature sliders in rows
     st.subheader("Adjust Feature Weightages")
-    new_weights = {}
-    for f in input_features:
-        new_weights[f] = st.slider(f"{f} (%)", 0, 100, st.session_state.feature_weights[f], key=f, step=1)
+    cols = st.columns(4)
+    for i, f in enumerate(all_features):
+        with cols[i % 4]:
+            st.session_state.feature_weights[f] = st.slider(f"{f}", 0, 100, st.session_state.feature_weights[f], key=f, step=1)
 
     if st.button("Optimize"):
-        total = sum(np.random.rand(len(input_features)))
-        optimized_weights = {f: int((np.random.rand() / total) * 100) for f in input_features}
-        for f in input_features:
+        total = sum(np.random.rand(len(all_features)))
+        optimized_weights = {f: int((np.random.rand() / total) * 100) for f in all_features}
+        for f in all_features:
             st.session_state.feature_weights[f] = optimized_weights[f]
-        st.success("Feature weights optimized successfully. Please adjust sliders if needed.")
+        st.success("Feature weights optimized successfully.")
+
+    # Display weights in table
+    st.subheader("Feature Weight Percentages")
+    weight_df = pd.DataFrame.from_dict(st.session_state.feature_weights, orient='index', columns=['Weight (%)'])
+    st.table(weight_df)
 
     # Notes
     st.markdown(f"""
     **Notes:**
     - Train: {split_ratio}%, Test: {100 - split_ratio}%
     - Model Weights (Hybrid): {weights if selected_model == "Hybrid" else "N/A"}
-    - Input Variable Weights: {st.session_state.feature_weights}
-    - Derived Variables: hour, day_of_week, month
+    - Derived Variables Used: demand_lag1, demand_lag2, demand_roll3, demand_roll6
     """)
