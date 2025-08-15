@@ -28,14 +28,14 @@ st.sidebar.header("Upload Data")
 train_file = st.sidebar.file_uploader("Upload Training Data CSV", type=["csv"])
 test_file = st.sidebar.file_uploader("Upload Testing Data CSV", type=["csv"])
 
-# Function to calculate accuracy metrics
+# Accuracy metrics
 def calculate_metrics(true, pred):
     mae = mean_absolute_error(true, pred)
     rmse = np.sqrt(mean_squared_error(true, pred))
     accuracy = 100 - (mae / np.mean(true) * 100)
     return mae, rmse, accuracy
 
-# Function to generate suggestions
+# Suggestion based on accuracy
 def generate_suggestion(accuracy):
     if accuracy > 90:
         return "✅ Model is highly accurate."
@@ -49,12 +49,17 @@ if train_file is not None and test_file is not None:
     train_df = pd.read_csv(train_file)
     test_df = pd.read_csv(test_file)
 
-    # Assume 'timestamp' and 'power_demand' columns exist
+    # Ensure datetime format
     train_df['timestamp'] = pd.to_datetime(train_df['timestamp'])
     test_df['timestamp'] = pd.to_datetime(test_df['timestamp'])
 
-    train_df.set_index('timestamp', inplace=True)
-    test_df.set_index('timestamp', inplace=True)
+    # Select state
+    states = train_df['state'].unique().tolist()
+    selected_state = st.selectbox("Select State for Forecasting", states)
+
+    # Filter by state
+    train_df = train_df[train_df['state'] == selected_state].sort_values('timestamp')
+    test_df = test_df[test_df['state'] == selected_state].sort_values('timestamp')
 
     # Split training data
     split_index = int(len(train_df) * train_split / 100)
@@ -64,12 +69,10 @@ if train_file is not None and test_file is not None:
     # Forecasting
     forecast = []
     if selected_model == "Prophet":
-        df_prophet = train_data.reset_index()[['timestamp', 'power_demand']]
-        df_prophet.columns = ['ds', 'y']
+        df_prophet = train_data[['timestamp', 'power_demand']].rename(columns={'timestamp': 'ds', 'power_demand': 'y'})
         model = Prophet()
         model.fit(df_prophet)
-        future = test_df.reset_index()[['timestamp']]
-        future.columns = ['ds']
+        future = test_df[['timestamp']].rename(columns={'timestamp': 'ds'})
         forecast_df = model.predict(future)
         forecast = forecast_df['yhat'].values
 
@@ -111,7 +114,7 @@ if train_file is not None and test_file is not None:
         model.fit(X_train, y_train)
         forecast = model.predict(X_test)
 
-    # Accuracy metrics
+    # Accuracy
     mae, rmse, accuracy = calculate_metrics(test_df['power_demand'].values, forecast)
     st.sidebar.subheader("Model Accuracy")
     st.sidebar.write(f"MAE: {mae:.2f}")
@@ -119,16 +122,17 @@ if train_file is not None and test_file is not None:
     st.sidebar.write(f"Accuracy: {accuracy:.2f}%")
     st.sidebar.write(generate_suggestion(accuracy))
 
-    # Forecast plot
+    # Plot
     st.subheader("Forecast vs Actual")
     fig, ax = plt.subplots()
-    ax.plot(test_df.index, test_df['power_demand'].values, label="Actual")
-    ax.plot(test_df.index, forecast, label="Forecast")
+    ax.plot(test_df['timestamp'], test_df['power_demand'].values, label="Actual")
+    ax.plot(test_df['timestamp'], forecast, label="Forecast")
     ax.legend()
     st.pyplot(fig)
 
     # Summary
     st.markdown("### Summary")
-    st.markdown(f"- Training Data Percentage: **{train_split}%**")
-    st.markdown(f"- Selected Model: **{selected_model}**")
-    st.markdown(f"- Accuracy: **{accuracy:.2f}%**")
+    st.markdown(f"- **State**: {selected_state}")
+    st.markdown(f"- **Training Data Percentage**: {train_split}%")
+    st.markdown(f"- **Selected Model**: {selected_model}")
+    st.markdown(f"- **Accuracy**: {accuracy:.2f}%")
